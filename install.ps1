@@ -20,7 +20,7 @@ Exact ToolDock release tag. Omit to select the latest release. This does not pin
 the versions of managed packages.
 .PARAMETER UpdateIntervalMinutes
 Package update interval in minutes, from 1 to 1440. Defaults to the saved value
-when updating, or 5 for the first installation.
+when updating, or 1440 (24 hours) for the first installation.
 .PARAMETER InstallRoot
 Installation directory. Defaults to ~/.tooldock. Reuse the same
 directory when updating; update.ps1 defaults to its own directory. This parameter
@@ -50,7 +50,7 @@ param(
     [string] $Version,
 
     [ValidateRange(1, 1440)]
-    [int] $UpdateIntervalMinutes = 5,
+    [int] $UpdateIntervalMinutes = 1440,
 
     [ValidateNotNullOrEmpty()]
     [string] $InstallRoot = (Join-Path $HOME '.tooldock')
@@ -58,6 +58,13 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+function New-ToolDockUpdaterTrigger([int] $IntervalMinutes) {
+    New-ScheduledTaskTrigger `
+        -Once `
+        -At ((Get-Date).AddMinutes($IntervalMinutes)) `
+        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)
+}
 
 function Remove-InstallDirectory([string] $Path, [string] $Root) {
     $resolved = [IO.Path]::GetFullPath($Path)
@@ -360,13 +367,7 @@ try {
         -Force | Out-Null
 
     $updaterAction = New-ScheduledTaskAction -Execute (Join-Path $binPath 'ToolDock.Updater.exe')
-    $updaterTriggers = @(
-        New-ScheduledTaskTrigger -AtLogOn -User $identity
-        New-ScheduledTaskTrigger `
-            -Once `
-            -At ((Get-Date).AddMinutes(1)) `
-            -RepetitionInterval (New-TimeSpan -Minutes $UpdateIntervalMinutes)
-    )
+    $updaterTrigger = New-ToolDockUpdaterTrigger $UpdateIntervalMinutes
     $updaterSettings = New-ScheduledTaskSettingsSet `
         -MultipleInstances IgnoreNew `
         -StartWhenAvailable `
@@ -374,10 +375,10 @@ try {
     Register-ScheduledTask `
         -TaskName $updaterTaskName `
         -Action $updaterAction `
-        -Trigger $updaterTriggers `
+        -Trigger $updaterTrigger `
         -Principal $principal `
         -Settings $updaterSettings `
-        -Description 'Checks GitHub Releases and installs ToolDock-managed tools.' `
+        -Description 'Checks GitHub Releases and HTTPS packages and installs ToolDock-managed tools.' `
         -Force | Out-Null
 
     Start-ScheduledTask -TaskName $starterTaskName

@@ -40,6 +40,24 @@
           "executable": "app/devproxy.exe"
         }
       }
+    },
+    "ngrok": {
+      "url": "https://bin.ngrok.com/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip",
+      "commands": {
+        "ngrok": {
+          "executable": "ngrok.exe"
+        }
+      }
+    },
+    "helper": {
+      "url": "https://example.org/download/helper.exe",
+      "format": "file",
+      "fileName": "helper.exe",
+      "commands": {
+        "helper": {
+          "executable": "helper.exe"
+        }
+      }
     }
   }
 }

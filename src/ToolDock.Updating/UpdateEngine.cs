@@ -43,7 +43,6 @@ internal sealed class UpdateEngine(
         state.ActiveCatalog = active;
         await JsonFiles.WriteAtomicAsync(paths.InstalledStateFile, state, cancellationToken);
         await PublishViewsAsync(state, cancellationToken);
-        var releases = new GitHubReleaseClient(http);
         var installer = new ReleaseInstaller(http, paths, attemptLog.CreateLogger<ReleaseInstaller>());
 
         foreach (var (name, definition) in desired.Tools.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
@@ -62,13 +61,7 @@ internal sealed class UpdateEngine(
                 // Finish the previous activation before attempting a newer release.
                 if (installed?.PendingReconciliation is not null)
                     await ReconcileAsync(state, name, installed, cancellationToken);
-                var release = await releases.GetLatestAsync(definition.Repo, definition.Asset, cancellationToken);
-                var changed = installed is null || installed.Version != release.Version ||
-                    !string.Equals(installed.Repository, definition.Repo, StringComparison.OrdinalIgnoreCase) ||
-                    installed.Asset != definition.Asset;
-                _log.LogInformation("Checking {Package}: installed={InstalledVersion} latest={LatestVersion}",
-                    name, installed?.Version ?? "none", release.Version);
-                var staged = changed ? await installer.StageAsync(name, definition, release, cancellationToken) : installed!;
+                var (staged, changed) = await installer.PrepareAsync(name, definition, installed, cancellationToken);
                 var root = paths.ResolveUnderRoot(staged.Root ?? Path.Combine("tools", name, staged.Version));
                 ReleaseInstaller.ValidateExecutables(name, root, definition);
                 foreach (var command in definition.Commands.Keys) CommandShims.Check(paths, command);
@@ -76,6 +69,7 @@ internal sealed class UpdateEngine(
                 var result = new InstalledTool
                 {
                     Version = staged.Version, Root = staged.Root, Repository = definition.Repo, Asset = definition.Asset,
+                    SourceId = staged.SourceId,
                     EntryPointsTracked = true, Commands = definition.Commands.Keys.Order(StringComparer.OrdinalIgnoreCase).ToList(),
                     CatalogVariables = desired.Variables, ActivationId = activation,
                     PendingReconciliation = changed ? new PendingReconciliation

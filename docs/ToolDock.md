@@ -1,12 +1,12 @@
 # ToolDock architecture
 
-ToolDock is a user-scoped Windows package updater and process supervisor. It installs release packages, exposes their CLI commands, and runs selected background applications in the current interactive user session.
+ToolDock is a user-scoped Windows package updater and process supervisor. It installs GitHub release packages and direct HTTPS ZIPs or binaries, exposes their CLI commands, and runs selected background applications in the current interactive user session.
 
 ## Invariants
 
 - Managed packages remain ordinary standalone ZIP archives and executables.
 - Managed packages consume ordinary environment variables and do not know about ToolDock value storage or DPAPI.
-- GitHub polling and installation stay outside managed tools.
+- Source polling and installation stay outside managed tools.
 - Only the starter owns supervised daemon processes and their Job Objects. The client owns interactive command launches; notification delivery owns its temporary handler process.
 - Only one update operation per installation root may run in the user session at a time.
 - ToolDock requires no administrator privileges, Windows Service, SSH, or inbound connection.
@@ -31,7 +31,7 @@ The three executables are framework-dependent single-file publications for `win-
 ## Component boundaries
 
 ```text
-                            GitHub Releases
+                      GitHub Releases / HTTPS URLs
                                   │
                                   ▼
                     ┌─────────────────────────┐
@@ -102,8 +102,8 @@ Failed
 The engine:
 
 1. downloads and validates the catalog;
-2. resolves the latest GitHub release for every enabled package;
-3. downloads and extracts a changed package into a staging directory;
+2. resolves the latest GitHub release, or downloads and hashes the HTTPS source, for every enabled package;
+3. extracts a changed ZIP or copies a standalone binary into a staging directory;
 4. validates every declared executable;
 5. moves the staged version into its final directory;
 6. atomically publishes installed paths, active definitions, catalog variable snapshots, and pending reconciliation in `installed.json`;
@@ -111,7 +111,11 @@ The engine:
 8. asks the starter to reconcile the updated package with a stable activation identifier;
 9. persists reconciliation completion, emits a version-change event, and prunes unused older versions.
 
-Before contacting the network, every run repairs derived files from committed state. Failed downloads and extraction never publish new definitions. Readers use the atomic installed-state snapshot; legacy state falls back to `catalog.json`. Repository and asset identity are stored with each installation and contribute to the version directory name. Junction creation uses the Windows reparse-point API directly, without a command shell.
+Before contacting the network, every run repairs derived files from committed state. Failed downloads and extraction never publish new definitions. Readers use the atomic installed-state snapshot; legacy state falls back to `catalog.json`. Source identity is stored with each installation and contributes to the version directory name. For GitHub it is derived from repository and asset, retaining compatibility with older state and version markers. For direct downloads it includes the URL, format, and installed filename. Junction creation uses the Windows reparse-point API directly, without a command shell.
+
+URL versions use the full SHA-256 of the downloaded file. Every check downloads the source once, including when the content is unchanged; the same temporary file is used for hashing and staging. Identical content and source identity retain the existing activation. Failures remove temporary files and leave the committed package usable.
+
+The installer defaults to a 1,440-minute repeating time trigger for all packages. It performs the initial update itself and schedules the next check one full interval later. The updater has no additional logon trigger. Existing saved intervals and explicit overrides are preserved. Manual `tdctl update` bypasses scheduling and checks immediately.
 
 The scheduled updater and interactive client differ only at the host boundary:
 
@@ -175,7 +179,9 @@ The optional top-level `variables` object contains public catalog-wide variable 
 }
 ```
 
-Each package must define at least one command or daemon. Either section may be omitted when unused. Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the extracted package directory. Environment names use the conventional Windows identifier form and are case-insensitively unique within one process definition.
+Each package must specify either `repo` and `asset`, or an absolute HTTPS `url`. URL packages default to ZIP; `format: "file"` requires a plain `fileName` for the downloaded binary. `format` and `fileName` apply only to URL sources. Local files and authenticated sources are not supported.
+
+Each package must define at least one command or daemon. Either section may be omitted when unused. Package names, command names, and daemon names are case-insensitively unique within their respective namespaces. Command and daemon executable paths must remain under the installed package directory. Environment names use the conventional Windows identifier form and are case-insensitively unique within one process definition.
 
 Command `arguments` are optional and precede arguments passed through `tdctl exec` or a generated shim. Both command and daemon arguments default to an empty list; each array entry is passed as one argument, including empty strings.
 

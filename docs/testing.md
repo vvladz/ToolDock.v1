@@ -11,7 +11,7 @@ powershell.exe -NoProfile -File tests/install-script.ps1 -InstallerPath install.
 pwsh -NoProfile -File tests/install-script.ps1 -InstallerPath install.ps1
 ```
 
-The integration runner exits nonzero on failure. It covers native junctions, concurrent log rotation, successful installation, source changes, interrupted activation, shim ownership, durable reconciliation, version retention, notifications, daemon exits, custom-root discovery, and overlapping clients. Package HTTP responses are supplied by an in-process test source.
+The integration runner exits nonzero on failure. It covers native junctions, concurrent log rotation, successful installation, source changes, interrupted activation, shim ownership, durable reconciliation, version retention, notifications, daemon exits, custom-root discovery, and overlapping clients. URL scenarios cover ZIPs, standalone files, repeated immediate checks, changed content at a stable URL, failed downloads and extraction, source switches, and compatibility with pre-URL GitHub state and markers. Package HTTP responses are supplied by an in-process test source.
 
 To rerun a scenario, pass part of its printed name:
 
@@ -19,7 +19,7 @@ To rerun a scenario, pass part of its printed name:
 dotnet run --project tests/ToolDock.IntegrationTests -c Release --no-build -- "notification command"
 ```
 
-Installer tests exercise release asset selection, help, complete staging, copy failure, directory switching, interrupted-install recovery, and the generated `update.ps1` with saved settings. Downloads are stubbed; they do not register scheduled tasks, edit the user `PATH`, or replace an installed ToolDock.
+Installer tests exercise release asset selection, help, complete staging, copy failure, directory switching, interrupted-install recovery, and the generated `update.ps1` with saved settings. They also check the 24-hour default and create unregistered time-trigger objects to verify the requested interval and next-check delay. Downloads are stubbed; they do not register scheduled tasks, edit the user `PATH`, or replace an installed ToolDock.
 
 ## Test published executables
 

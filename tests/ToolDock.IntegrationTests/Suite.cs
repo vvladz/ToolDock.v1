@@ -19,6 +19,9 @@ internal static partial class Suite
         await Test("native junctions with shell metacharacters", JunctionAsync);
         await Test("concurrent log rotation", LogRotationAsync);
         await Test("successful install, source identity and failed catalog changes", UpdatesAsync);
+        await Test("URL source validation and GitHub state compatibility", UrlValidationAsync);
+        await Test("URL ZIP content updates, failures and source changes", UrlUpdatesAsync);
+        await Test("URL single files, entry points and version retention", UrlFilesAsync);
         await Test("interrupted activation, obsolete shims and user files", RecoveryAsync);
         await Test("persistent reconciliation, outcomes and failure suppression", ReconciliationAsync);
         await Test("version retention and live leases", RetentionAsync);

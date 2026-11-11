@@ -13,6 +13,7 @@ $installRoot = Join-Path ([IO.Path]::GetTempPath()) ("ToolDock-installer-test-" 
 $expectedDefaultRoot = [IO.Path]::GetFullPath((Join-Path $HOME '.tooldock'))
 $verifyDefaultRoot = $false
 $verifySavedSettings = $false
+$verifyDefaultInterval = $true
 $republishDuringDownload = $false
 $expectedReleaseUri = 'https://api.github.com/repos/example/ToolDock/releases/latest'
 $expectedInstallerUri = 'https://raw.githubusercontent.com/example/ToolDock/HEAD/install.ps1'
@@ -45,6 +46,9 @@ function Invoke-RestMethod {
 }
 
 function Invoke-WebRequest {
+    if ($verifyDefaultInterval -and $UpdateIntervalMinutes -ne 1440) {
+        throw 'A new installation must check packages every 24 hours.'
+    }
     if ($verifyDefaultRoot -and -not [string]::Equals($installPath, $expectedDefaultRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Installer chose $installPath instead of $expectedDefaultRoot."
     }
@@ -73,6 +77,7 @@ try {
             throw
         }
     }
+    $verifyDefaultInterval = $false
 
     $verifyDefaultRoot = $true
     try {
@@ -94,9 +99,22 @@ try {
     $definitions = $ast.FindAll({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-            $node.Name -in @('Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin', 'Publish-UpdateScript')
+            $node.Name -in @('New-ToolDockUpdaterTrigger', 'Remove-InstallDirectory', 'Put-PathEntryFirst', 'Stage-ToolDockBin', 'Switch-ToolDockBin', 'Publish-UpdateScript')
     }, $false)
     foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
+    foreach ($interval in @(1440, 15)) {
+        $before = Get-Date
+        $trigger = @(New-ToolDockUpdaterTrigger $interval)
+        $after = Get-Date
+        if ($trigger.Count -ne 1 -or $trigger[0].CimClass.CimClassName -ne 'MSFT_TaskTimeTrigger' -or
+            [Xml.XmlConvert]::ToTimeSpan($trigger[0].Repetition.Interval).TotalMinutes -ne $interval) {
+            throw 'Updater must have one repeating time trigger with the requested interval.'
+        }
+        $firstRun = [DateTime]::Parse($trigger[0].StartBoundary)
+        if ($firstRun -lt $before.AddMinutes($interval).AddSeconds(-1) -or $firstRun -gt $after.AddMinutes($interval)) {
+            throw 'Updater should wait a full interval after the initial installation update.'
+        }
+    }
     New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
     $configPath = Join-Path $installRoot 'config.json'
     [IO.File]::WriteAllText($configPath,

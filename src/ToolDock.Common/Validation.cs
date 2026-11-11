@@ -46,17 +46,7 @@ public static partial class Validation
                 throw new InvalidDataException($"Duplicate package name differs only by case: {name}");
             }
 
-            if (!RepositoryPattern().IsMatch(definition.Repo) || definition.Repo.Contains("..", StringComparison.Ordinal))
-            {
-                throw new InvalidDataException($"Invalid GitHub repository for {name}: {definition.Repo}");
-            }
-
-            if (string.IsNullOrWhiteSpace(definition.Asset) ||
-                definition.Asset.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-                definition.Asset is "." or "..")
-            {
-                throw new InvalidDataException($"Invalid release asset name for {name}.");
-            }
+            ValidateSource(name, definition);
 
             if (definition.Commands.Count == 0 && definition.Daemons.Count == 0)
             {
@@ -90,6 +80,41 @@ public static partial class Validation
                 ValidateEnvironment($"daemon {daemonName}", daemon.Environment);
             }
         }
+    }
+
+    private static void ValidateSource(string name, ToolDefinition definition)
+    {
+        if (definition.Url is null)
+        {
+            if (definition.Repo is null || !RepositoryPattern().IsMatch(definition.Repo) ||
+                definition.Repo.Contains("..", StringComparison.Ordinal))
+                throw new InvalidDataException($"Invalid GitHub repository for {name}: {definition.Repo}");
+            if (string.IsNullOrWhiteSpace(definition.Asset) ||
+                definition.Asset.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || definition.Asset is "." or "..")
+                throw new InvalidDataException($"Invalid release asset name for {name}.");
+            if (definition.Format is not null || definition.FileName is not null)
+                throw new InvalidDataException($"Package {name}: format and fileName require a URL source.");
+            return;
+        }
+
+        if (definition.Repo is not null || definition.Asset is not null)
+            throw new InvalidDataException($"Package {name} must specify either repo and asset, or url.");
+        if (!Uri.TryCreate(definition.Url, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length != 0 || uri.Fragment.Length != 0)
+            throw new InvalidDataException($"Package URL for {name} must be absolute HTTPS without user info or a fragment.");
+        if (definition.Format is not (null or "zip" or "file"))
+            throw new InvalidDataException($"Package {name}: format must be zip or file.");
+        if (definition.Format == "file")
+        {
+            if (string.IsNullOrWhiteSpace(definition.FileName) ||
+                definition.FileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                definition.FileName.EndsWith('.') || definition.FileName.EndsWith(' ') ||
+                definition.FileName.StartsWith(".tooldock-", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Package {name}: file format requires a plain fileName.");
+            _ = ValidateExecutablePath(name, definition.FileName);
+        }
+        else if (definition.FileName is not null)
+            throw new InvalidDataException($"Package {name}: fileName requires file format.");
     }
 
     public static void ValidateValueName(string name)

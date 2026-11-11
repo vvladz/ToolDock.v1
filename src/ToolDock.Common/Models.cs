@@ -20,8 +20,16 @@ public sealed class ToolCatalog
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class ToolDefinition
 {
-    public required string Repo { get; init; }
-    public required string Asset { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Repo { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Asset { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Url { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Format { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FileName { get; init; }
     public bool Enabled { get; init; } = true;
     public Dictionary<string, CommandDefinition> Commands { get; init; } = [];
     public Dictionary<string, DaemonDefinition> Daemons { get; init; } = [];
@@ -159,6 +167,8 @@ public sealed class InstalledTool
     public List<string> Commands { get; init; } = [];
     public string? Repository { get; init; }
     public string? Asset { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceId { get; init; }
     public string? ActivationId { get; init; }
     public Dictionary<string, string>? CatalogVariables { get; set; }
     public PendingReconciliation? PendingReconciliation { get; set; }

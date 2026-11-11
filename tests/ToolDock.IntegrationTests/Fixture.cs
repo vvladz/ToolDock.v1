@@ -101,6 +101,7 @@ internal sealed class FakeSource : HttpMessageHandler
     public bool FailCatalog { get; set; }
     public bool FailDownload { get; set; }
     public int Downloads { get; private set; }
+    public int ReleaseRequests { get; private set; }
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -112,8 +113,9 @@ internal sealed class FakeSource : HttpMessageHandler
         }
         if (url.AbsolutePath.EndsWith("/releases/latest", StringComparison.Ordinal))
         {
+            ReleaseRequests++;
             var repository = string.Join('/', url.Segments.Skip(2).Take(2)).Replace("//", "/").Trim('/');
-            var assets = Catalog.Tools.Values.Where(d => d.Repo.Equals(repository, StringComparison.OrdinalIgnoreCase))
+            var assets = Catalog.Tools.Values.Where(d => string.Equals(d.Repo, repository, StringComparison.OrdinalIgnoreCase))
                 .Select(d => new { name = d.Asset, browser_download_url = "https://test.local/download" }).Distinct().ToArray();
             return Task.FromResult(Json(new { tag_name = Version, assets }));
         }

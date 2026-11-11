@@ -1,6 +1,6 @@
 # ToolDock
 
-ToolDock installs Windows tool packages from GitHub Releases, keeps them up to date, and supervises background applications in the current user session. Managed applications require no ToolDock-specific integration.
+ToolDock installs Windows tool packages from GitHub Releases or direct HTTPS URLs, keeps them up to date, and supervises background applications in the current user session. Managed applications require no ToolDock-specific integration.
 
 ToolDock works without administrator privileges, inbound connections, SSH, or Windows Services. It installs three executables:
 
@@ -11,7 +11,7 @@ ToolDock works without administrator privileges, inbound connections, SSH, or Wi
 ## Requirements
 
 - Windows 10/11 x64;
-- public GitHub Releases for ToolDock and its managed packages;
+- public GitHub Releases for ToolDock; managed packages may also use direct public HTTPS downloads;
 - [.NET 10 Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0);
 - Windows PowerShell 5.1 or PowerShell 7 (`pwsh`) on Windows;
 - an interactive sign-in for the current user.
@@ -42,7 +42,7 @@ The script can also be launched explicitly with `pwsh -NoProfile -File .\install
 | `-CatalogUrl` | Required on first install | Absolute HTTPS URL of your JSON package catalog; saved for updates |
 | `-Version` | Latest release | Exact ToolDock release tag; does not pin managed packages |
 | `-InstallRoot` | `~/.tooldock` | Installation directory; installed `update.ps1` uses its own directory |
-| `-UpdateIntervalMinutes` | Saved value, or `5` on first install | Package check interval, from 1 to 1,440 minutes |
+| `-UpdateIntervalMinutes` | Saved value, or `1440` (24 hours) on first install | Package check interval, from 1 to 1,440 minutes |
 
 The installer:
 
@@ -119,9 +119,17 @@ The installer writes `<InstallRoot>\config.json`; [config.example.json](docs/con
 
 Edit this file to change the catalog or notification settings. They are read on each update or notification delivery. To change the schedule, rerun the installer with `-UpdateIntervalMinutes` or edit `updateIntervalMinutes` and run `update.ps1`.
 
+New installations check all enabled packages every 24 hours, after the installer's initial update. Signing in starts the supervisor without an extra package check; Task Scheduler is configured to catch up on missed scheduled checks when available. `tdctl update` always checks immediately, regardless of the scheduled interval, and does not reset the schedule.
+
+Upgrades preserve the saved interval. To switch an existing installation to daily checks when updating ToolDock:
+
+```powershell
+& "$HOME\.tooldock\update.ps1" -UpdateIntervalMinutes 1440
+```
+
 ## Package catalog
 
-A catalog entry describes one release package and its command and daemon entry points. [tools.example.json](docs/tools.example.json) contains a complete template. Repository names, asset names, executable paths, and service addresses in the examples are placeholders; replace them with your package's actual release layout.
+A catalog entry describes one package and its command and daemon entry points. [tools.example.json](docs/tools.example.json) contains GitHub, URL ZIP, and single-file examples. Except for the ngrok download URL, repository names, URLs, asset names, executable paths, and service addresses are placeholders; replace them with your package's actual layout.
 
 Package names identify installations. Command names identify terminal entry points. Daemon names identify supervised background processes. A command and a daemon can share a name:
 
@@ -188,16 +196,45 @@ Fields:
 | Field | Meaning |
 |---|---|
 | `variables` | Optional catalog-wide plaintext variables that override user variables with the same name |
-| `repo` | GitHub repository in `owner/name` form |
-| `asset` | Exact ZIP asset name in the latest release |
+| `repo` | GitHub repository in `owner/name` form; use with `asset`, mutually exclusive with `url` |
+| `asset` | Exact ZIP asset name in the latest GitHub release |
+| `url` | Alternative package source: absolute HTTPS download URL, without user info or a fragment |
+| `format` | URL sources only: `zip` (default) or `file` for a standalone binary |
+| `fileName` | Required for `format: "file"`: a plain installed filename, such as `helper.exe`; not a path |
 | `enabled` | Whether ToolDock may update and start the package; defaults to `true` |
 | `commands` | Optional globally unique command names mapped to command definitions |
 | `daemons` | Optional globally unique supervised-daemon names and their launch settings |
-| `executable` | Relative executable path inside the ZIP |
+| `executable` | Relative executable path inside the installed package; for single files, use `fileName` |
 | `arguments` | Optional fixed command arguments (before invocation arguments) or daemon arguments; defaults to an empty list |
 | `autostart` | Start the daemon after sign-in or its first installation; defaults to `false` |
 | `restartOnUpdate` | Restart the daemon after its package changes, if it is currently running; defaults to `false` |
 | `environment` | Optional process environment made from literals, variables, and secret references |
+
+Each package must use either `repo` and `asset`, or `url`. For example, add this entry to `tools` to install ngrok from its standalone Windows ZIP:
+
+```json
+"ngrok": {
+  "url": "https://bin.ngrok.com/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip",
+  "commands": {
+    "ngrok": { "executable": "ngrok.exe" }
+  }
+}
+```
+
+For an unarchived binary, set `format` to `file` and `fileName` to its installed name:
+
+```json
+"helper": {
+  "url": "https://example.org/download/helper.exe",
+  "format": "file",
+  "fileName": "helper.exe",
+  "commands": {
+    "helper": { "executable": "helper.exe" }
+  }
+}
+```
+
+URL packages are downloaded on every scheduled or manual check. The SHA-256 of the downloaded bytes is their version, displayed as `sha256-<hash>`; no release tag or manually maintained version is needed. Identical bytes do not reinstall the package or restart its daemons. Changed bytes go through normal staging and activation. ZIP metadata changes also change the hash. This content hash detects changes; it is not a publisher-provided checksum. URL downloads currently have no conditional HTTP caching, authentication, local-file, or directory-source support.
 
 Versions are installed side by side and exposed through a `current` directory junction:
 
@@ -213,6 +250,8 @@ Each command gets a shim in `~/.tooldock/bin`. The shim delegates execution to `
 Names are case-insensitive and must be unique within each namespace. ToolDock reserves the command names `tdctl`, `ToolDock.Client`, `ToolDock.Starter`, `ToolDock.Updater`, `starter`, and `updater`.
 
 Removing or disabling a package removes its generated command shims on the next successful catalog refresh while preserving installed files and stored values. It does not stop an already running daemon; use `tdctl stop <daemon>` when that is intended. User-created or modified shims are preserved, and a conflicting command file causes package activation to fail. Changing a package's repository or asset installs the new source even if the release tag stays the same. Replacing an asset in place under the same repository, tag, and asset name is not detected; publish a new release tag for updates.
+
+For URL packages, changing the URL, format, or installed filename also installs a distinct source, even when the downloaded bytes are identical. Existing GitHub catalogs and installed state remain supported.
 
 Updates publish the installed version and its command/daemon definitions together. A failed download or extraction keeps the previous definitions usable. An interrupted activation is repaired on the next update. Failed Starter reconciliation remains pending and is retried without repeating an already applied restart.
 
